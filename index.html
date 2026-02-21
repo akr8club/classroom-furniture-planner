@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教室什器最適化計算機</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; max-width: 1400px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
+        h1 { text-align: center; margin-bottom: 30px; color: #333; }
+        .section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        textarea { width: 100%; height: 120px; border: 2px dashed #ddd; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 14px; resize: vertical; }
+        textarea:focus { border-color: #007bff; outline: none; }
+        button { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 5px; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background: #f1f3f4; font-weight: bold; position: sticky; top: 0; }
+        .positive { background: #d4edda; color: #155724; }
+        .negative { background: #f8d7da; color: #721c24; }
+        .move-table td:nth-child(1), .move-table td:nth-child(2) { font-weight: bold; }
+        #output { margin-top: 20px; }
+        .download { background: #28a745; }
+        .download:hover { background: #218838; }
+        @media (max-width: 768px) { table { font-size: 12px; } th, td { padding: 4px; } }
+    </style>
+</head>
+<body>
+    <h1>🪑 教室什器最適化計算機</h1>
+    
+    <div class="section">
+        <h2>📋 入力方法</h2>
+        <p>Excel/CSVをコピーして下のエリアにペースト、またはファイルを選択。2つのテーブル（今年度/来年度）で別入力。</p>
+        <label>今年度在庫（貼り付け or CSV）</label>
+        <textarea id="currentPaste" placeholder="例: 部屋ID,階,机1,机2,机3,机4,机5,机6,机7,机8,椅子1,椅子2,...&#10;101,2,10,8,5,3,2,1,0,0,12,10,..."></textarea>
+        <input type="file" id="currentFile" accept=".csv" style="margin: 10px 0;">
+        <button onclick="loadCurrent()">今年度読み込み</button>
+        <table id="currentTable"></table>
+    </div>
+
+    <div class="section">
+        <label>来年度必要数（貼り付け or CSV）</label>
+        <textarea id="nextPaste" placeholder="例: 部屋ID,階,机1,机2,机3,机4,机5,机6,机7,机8,椅子1,椅子2,...&#10;101,2,12,9,6,4,3,2,1,0,15,12,..."></textarea>
+        <input type="file" id="nextFile" accept=".csv" style="margin: 10px 0;">
+        <button onclick="loadNext()">来年度読み込み</button>
+        <table id="nextTable"></table>
+    </div>
+
+    <div class="section" style="text-align: center;">
+        <button onclick="calculate()" id="calcBtn" disabled>🚀 最適移動計画を計算</button>
+    </div>
+
+    <div id="output" style="display: none;">
+        <div class="section">
+            <h2>📊 移動計画（部屋間移動）</h2>
+            <table id="moveTable" class="move-table"></table>
+        </div>
+        <div class="section">
+            <h2>🆕 発注一覧（各部屋）</h2>
+            <table id="orderTable"></table>
+            <button class="download" onclick="downloadCSV('orders')">📥 CSVダウンロード</button>
+        </div>
+        <div class="section">
+            <h2>📦 倉庫戻し一覧（各部屋）</h2>
+            <table id="returnTable"></table>
+            <button class="download" onclick="downloadCSV('returns')">📥 CSVダウンロード</button>
+        </div>
+    </div>
+
+    <script>
+        let currentData = {}, nextData = {};
+
+        // サイズ定義（机1-8, 椅子1-8）
+        const SIZES = ['机1', '机2', '机3', '机4', '机5', '机6', '机7', '机8', '椅子1', '椅子2', '椅子3', '椅子4', '椅子5', '椅子6', '椅子7', '椅子8'];
+
+        // ペースト/CSV読み込み共通パーサー
+        function parseData(textOrFile, callback) {
+            if (typeof textOrFile === 'string') {
+                Papa.parse(textOrFile, { header: true, skipEmptyLines: true, complete: (res) => callback(res.data) });
+            } else {
+                Papa.parse(textOrFile, { header: true, skipEmptyLines: true, complete: (res) => callback(res.data) });
+            }
+        }
+
+        // 今年度読み込み
+        function loadCurrent() {
+            const paste = document.getElementById('currentPaste').value.trim();
+            const file = document.getElementById('currentFile').files[0];
+            if (!paste && !file) return alert('データを貼り付け or ファイルを選択');
+            
+            const loader = paste ? parseData(paste, processCurrent) : parseData(file, processCurrent);
+        }
+
+        function processCurrent(rows) {
+            currentData = {};
+            rows.forEach(row => {
+                if (row['部屋ID']) {
+                    currentData[row['部屋ID']] = { floor: row['階'], data: {} };
+                    SIZES.forEach(size => {
+                        currentData[row['部屋ID']].data[size] = parseInt(row[size] || 0) || 0;
+                    });
+                }
+            });
+            renderTable('currentTable', currentData);
+            checkReady();
+        }
+
+        // 来年度読み込み（同上）
+        function loadNext() {
+            const paste = document.getElementById('nextPaste').value.trim();
+            const file = document.getElementById('nextFile').files[0];
+            if (!paste && !file) return alert('データを貼り付け or ファイルを選択');
+            
+            parseData(paste || file, processNext);
+        }
+
+        function processNext(rows) {
+            nextData = {};
+            rows.forEach(row => {
+                if (row['部屋ID']) {
+                    nextData[row['部屋ID']] = { floor: row['階'], data: {} };
+                    SIZES.forEach(size => {
+                        nextData[row['部屋ID']].data[size] = parseInt(row[size] || 0) || 0;
+                    });
+                }
+            });
+            renderTable('nextTable', nextData);
+            checkReady();
+        }
+
+        // テーブル描画
+        function renderTable(tableId, data) {
+            const table = document.getElementById(tableId);
+            table.innerHTML = '';
+            if (Object.keys(data).length === 0) return;
+
+            let html = '<thead><tr><th>部屋ID</th><th>階</th>' + SIZES.map(s => `<th>${s}</th>`).join('') + '</tr></thead><tbody>';
+            Object.entries(data).forEach(([roomId, room]) => {
+                html += `<tr><td>${roomId}</td><td>${room.floor}</td>`;
+                SIZES.forEach(size => {
+                    const val = room.data[size];
+                    const cls = val > 10 ? 'positive' : val < 5 ? 'negative' : '';
+                    html += `<td class="${cls}">${val}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody>';
+            table.innerHTML = html;
+        }
+
+        // 計算可能かチェック
+        function checkReady() {
+            const btn = document.getElementById('calcBtn');
+            btn.disabled = Object.keys(currentData).length === 0 || Object.keys(nextData).length === 0;
+        }
+
+        // 最適移動計算
+        function calculate() {
+            const moves = [], orders = [], returns = [];
+            const surplus = {}, deficit = {};
+
+            // 差分計算
+            Object.keys({ ...currentData, ...nextData }).forEach(roomId => {
+                const curr = currentData[roomId]?.data || {};
+                const nxt = nextData[roomId]?.data || {};
+                SIZES.forEach(size => {
+                    const diff = (curr[size] || 0) - (nxt[size] || 0);
+                    if (diff > 0) {
+                        if (!surplus[size]) surplus[size] = [];
+                        surplus[size].push({ room: roomId, amount: diff, floor: currentData[roomId]?.floor || '' });
+                    } else if (diff < 0) {
+                        if (!deficit[size]) deficit[size] = [];
+                        deficit[size].push({ room: roomId, amount: -diff, floor: nextData[roomId]?.floor || '' });
+                    }
+                });
+            });
+
+            // サイズごとに貪欲マッチング（同一階優先）
+            SIZES.forEach(size => {
+                if (surplus[size] && deficit[size]) {
+                    surplus[size].sort((a, b) => (a.floor === b.floor ? 0 : a.floor ? 1 : -1)); // 簡易優先
+                    deficit[size].sort((a, b) => a.amount - b.amount);
+                    let i = 0, j = 0;
+                    while (i < surplus[size].length && j < deficit[size].length) {
+                        const moveAmt = Math.min(surplus[size][i].amount, deficit[size][j].amount);
+                        if (moveAmt > 0) {
+                            moves.push({ from: surplus[size][i].room, to: deficit[size][j].room, size, amount: moveAmt });
+                            surplus[size][i].amount -= moveAmt;
+                            deficit[size][j].amount -= moveAmt;
+                        }
+                        if (surplus[size][i].amount === 0) i++;
+                        if (deficit[size][j].amount === 0) j++;
+                    }
+                }
+            });
+
+            // 残余剰 → 倉庫戻し
+            SIZES.forEach(size => {
+                if (surplus[size]) {
+                    surplus[size].forEach(s => {
+                        if (s.amount > 0) returns.push({ room: s.room, size: size, amount: s.amount });
+                    });
+                }
+            });
+
+            // 残不足 → 発注
+            SIZES.forEach(size => {
+                if (deficit[size]) {
+                    deficit[size].forEach(d => {
+                        if (d.amount > 0) orders.push({ room: d.room, size: size, amount: d.amount });
+                    });
+                }
+            });
+
+            renderOutput(moves, orders, returns);
+        }
+
+        // 出力描画
+        function renderOutput(moves, orders, returns) {
+            document.getElementById('output').style.display = 'block';
+
+            // 移動表
+            let moveHtml = '<thead><tr><th>移動元</th><th>移動先</th><th>サイズ</th><th>台数</th></tr></thead><tbody>';
+            moves.forEach(m => {
+                moveHtml += `<tr><td>${m.from}</td><td>${m.to}</td><td>${m.size}</td><td class="positive">${m.amount}</td></tr>`;
+            });
+            document.getElementById('moveTable').innerHTML = moveHtml || '<tr><td colspan=4>移動なし</td></tr>';
+
+            // 発注表
+            let orderHtml = '<thead><tr><th>部屋</th><th>サイズ</th><th>台数</th></tr></thead><tbody>';
+            orders.forEach(o => orderHtml += `<tr><td>${o.room}</td><td>${o.size}</td><td class="negative">${o.amount}</td></tr>`);
+            document.getElementById('orderTable').innerHTML = orderHtml || '<tr><td colspan=3>発注なし</td></tr>';
+
+            // 戻し表
+            let returnHtml = '<thead><tr><th>部屋</th><th>サイズ</th><th>台数</th></tr></thead><tbody>';
+            returns.forEach(r => returnHtml += `<tr><td>${r.room}</td><td>${r.size}</td><td class="positive">${r.amount}</td></tr>`);
+            document.getElementById('returnTable').innerHTML = returnHtml || '<tr><td colspan=3>戻しなし</td></tr>';
+
+            window.orders = orders; window.returns = returns; // ダウンロード用
+        }
+
+        // CSVダウンロード
+        function downloadCSV(type) {
+            const data = type === 'orders' ? window.orders : window.returns;
+            if (!data.length) return alert('データなし');
+            const csv = [ ['部屋', 'サイズ', '台数'], ...data.map(d => [d.room, d.size, d.amount]) ].map(row => row.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `${type}.csv`; a.click();
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('currentPaste').addEventListener('paste', (e) => {
+                setTimeout(() => loadCurrent(), 10);
+            });
+            document.getElementById('nextPaste').addEventListener('paste', (e) => {
+                setTimeout(() => loadNext(), 10);
+            });
+        });
+    </script>
+</body>
+</html>
+
