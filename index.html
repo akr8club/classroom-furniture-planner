@@ -13,7 +13,7 @@
         .section { margin-bottom: 40px; }
         .section h2 { color: #34495e; margin-bottom: 15px; border-bottom: 2px solid #3498db; padding-bottom: 8px; }
         .input-group { display: flex; gap: 15px; align-items: end; flex-wrap: wrap; margin-bottom: 15px; }
-        input[type="text"], textarea { padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; }
+        input[type="text"], input[type="number"], textarea { padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; }
         input[type="text"] { width: 120px; }
         textarea { width: 100%; height: 120px; resize: vertical; }
         button { background: #3498db; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all 0.3s; }
@@ -31,7 +31,7 @@
         .add-row:hover { background: #229954; }
         .results { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
         .result-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; }
-        .color-legend { display: flex; gap: 20px; margin: 20px 0; font-size: 12px; }
+        .color-legend { display: flex; gap: 20px; margin: 20px 0; font-size: 12px; flex-wrap: wrap; }
         .legend-item { display: flex; align-items: center; gap: 6px; }
         .legend-color { width: 20px; height: 20px; border: 1px solid #ccc; }
         .surplus { background: #d5f4e6 !important; color: #27ae60; }
@@ -40,6 +40,7 @@
         .sufficient { background: #d1ecf1 !important; color: #3498db; }
         @media (max-width: 768px) { .results { grid-template-columns: 1fr; } .input-group { flex-direction: column; align-items: stretch; } }
         .scroll-x { overflow-x: auto; }
+        input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 5px rgba(52,152,219,0.3); }
     </style>
 </head>
 <body>
@@ -77,7 +78,7 @@
         </div>
 
         <div style="text-align: center; margin: 40px 0;">
-            <button onclick="optimize()">🚀 最適化計算実行</button>
+            <button onclick="optimize()" style="padding: 15px 40px; font-size: 16px;">🚀 最適化計算実行</button>
             <button class="danger" onclick="clearAll()" style="margin-left: 15px;">🔄 全クリア</button>
         </div>
 
@@ -85,25 +86,24 @@
             <div class="color-legend">
                 <div class="legend-item"><div class="legend-color surplus"></div>余剰(緑)</div>
                 <div class="legend-item"><div class="legend-color deficit"></div>不足(赤)</div>
-                <div class="legend-item"><div class="legend-color moved"></div>移動(黄)</div>
                 <div class="legend-item"><div class="legend-color sufficient"></div>充足(青)</div>
             </div>
             <div class="results">
                 <div class="result-panel">
-                    <h3>📊 最適化プラン比較</h3>
+                    <h3>📊 最適化プラン (距離優先/最小台数/最小階移動)</h3>
                     <div id="plans"></div>
                 </div>
                 <div class="result-panel">
-                    <h3>📈 発注/倉庫戻し</h3>
+                    <h3>📈 発注・倉庫戻し</h3>
                     <div id="orders"></div>
                 </div>
             </div>
             <div class="result-panel" style="margin-top: 20px;">
-                <h3>🎯 移動前後比較</h3>
-                <div id="comparison"></div>
+                <h3>🎯 移動前後比較表</h3>
+                <div id="comparison" class="scroll-x"></div>
             </div>
             <div style="text-align: center; margin-top: 30px;">
-                <button onclick="downloadCSV()">💾 全結果CSVダウンロード</button>
+                <button onclick="downloadCSV()" style="padding: 12px 32px;">💾 全結果CSVダウンロード</button>
             </div>
         </div>
     </div>
@@ -112,118 +112,162 @@
         let inventoryData = {};
         let requiredData = {};
 
-        // テーブルにCtrl+V貼り付け対応
+        // テーブルにCtrl+V貼り付け対応（修正版）
         document.addEventListener('paste', function(e) {
             const active = document.activeElement;
-            const tableId = active.closest('table')?.id;
-            if (!tableId || !['inventoryTable', 'requiredTable'].includes(tableId)) return;
+            if (!active || active.tagName !== 'INPUT') return;
+            
+            const table = active.closest('table');
+            if (!table || !['inventoryTable', 'requiredTable'].includes(table.id)) return;
 
             e.preventDefault();
             const clipboardData = e.clipboardData || window.clipboardData;
             const text = clipboardData.getData('text');
-            const lines = text.trim().split('\n').map(line => line.split(/\t|,/).map(cell => cell.trim()));
-            
-            const tbody = active.closest('tbody');
-            const firstCell = active.closest('tr')?.cells[0];
-            if (firstCell) {
-                let rowIndex = Array.from(tbody.children).indexOf(active.closest('tr'));
-                lines.forEach((row, i) => {
-                    if (rowIndex + i >= tbody.children.length) {
-                        addEmptyRow(tableId);
+            const lines = text.split('\n').filter(line => line.trim()).map(line => 
+                line.split(/\t|,/).map(cell => cell.trim().replace(/"/g, ''))
+            );
+
+            const tbody = table.tBodies[0];
+            const cellIndex = Array.from(active.parentElement.cells).indexOf(active.parentElement);
+            const rowIndex = Array.from(tbody.rows).indexOf(active.parentElement.parentElement);
+
+            lines.forEach((line, lineIdx) => {
+                let targetRowIdx = rowIndex + lineIdx;
+                while (targetRowIdx >= tbody.rows.length) {
+                    const tableType = table.id.replace('Table', '');
+                    addRow(tableType);
+                    targetRowIdx = tbody.rows.length - 1;
+                }
+                
+                const targetRow = tbody.rows[targetRowIdx];
+                line.forEach((cell, cellIdx) => {
+                    const targetCellIdx = cellIndex + cellIdx;
+                    if (targetCellIdx < targetRow.cells.length) {
+                        const input = targetRow.cells[targetCellIdx].querySelector('input');
+                        if (input) input.value = cell;
                     }
-                    const targetRow = tbody.children[rowIndex + i];
-                    row.forEach((cell, j) => {
-                        if (j < targetRow.cells.length) {
-                            targetRow.cells[j].querySelector('input')?.value = cell;
-                        }
-                    });
-                    updateTotals(tableId);
                 });
-            }
+            });
+            
+            const tableType = table.id.replace('Table', '');
+            updateTotals(tableType);
         });
 
+        // [+行追加]ボタン修正版 - 確実に最下部に空行追加
         function addRow(type) {
             const table = document.getElementById(type + 'Table').tBodies[0];
-            const row = table.insertRow();
+            const row = table.insertRow(-1); // 最下部に追加
+            
             row.innerHTML = `
-                <td class="room-col"><input type="text" placeholder="部屋名" oninput="updateTotals('${type}')"></td>
-                <td class="floor-col"><input type="text" placeholder="階" oninput="updateTotals('${type}')"></td>
-                ${Array(16).fill().map(() => '<td class="desk-col"><input type="number" min="0" value="0" oninput="updateTotals(\''+type+'\')"></td>').join('')}
+                <td class="room-col"><input type="text" placeholder="部屋名 (例: 101)" oninput="updateTotals('${type}')"></td>
+                <td class="floor-col"><input type="text" placeholder="階 (例: 2)" oninput="updateTotals('${type}')"></td>
+                ${Array(16).fill(0).map((_, i) => 
+                    `<td${i<8 ? ' class="desk-col"' : ''}><input type="number" min="0" value="0" style="width:100%;padding:4px;font-size:11px;" oninput="updateTotals('${type}')"></td>`
+                ).join('')}
             `;
+            
+            // 最新追加行の最初のinputにフォーカス
+            row.cells[0].querySelector('input').focus();
             updateTotals(type);
-        }
-
-        function addEmptyRow(tableId) {
-            const table = document.getElementById(tableId).tBodies[0];
-            const row = table.insertRow();
-            row.innerHTML = `
-                <td class="room-col"><input type="text" placeholder="部屋名" oninput="updateTotals('${tableId.replace('Table', '')}')"></td>
-                <td class="floor-col"><input type="text" placeholder="階" oninput="updateTotals('${tableId.replace('Table', '')}')"></td>
-                ${Array(16).fill().map(() => '<td><input type="number" min="0" value="0" oninput="updateTotals(\''+tableId.replace('Table', '')+'\')"></td>').join('')}
-            `;
         }
 
         function updateTotals(type) {
             const data = {};
             const table = document.getElementById(type + 'Table').tBodies[0];
+            
             for (let row of table.rows) {
-                const room = row.cells[0].querySelector('input').value.trim();
-                const floor = row.cells[1].querySelector('input').value.trim();
+                const roomInput = row.cells[0].querySelector('input');
+                const floorInput = row.cells[1].querySelector('input');
+                const room = roomInput.value.trim();
+                const floor = floorInput.value.trim();
+                
                 if (!room || !floor) continue;
                 
                 const key = `${room}|${floor}`;
                 if (!data[key]) {
-                    data[key] = { room, floor: parseInt(floor), desks: [0,0,0,0,0,0,0,0], chairs: [0,0,0,0,0,0,0,0] };
+                    data[key] = { 
+                        room, 
+                        floor: parseInt(floor), 
+                        desks: new Array(8).fill(0), 
+                        chairs: new Array(8).fill(0) 
+                    };
                 }
                 
+                // 机1-8
                 for (let i = 0; i < 8; i++) {
-                    data[key].desks[i] += parseInt(row.cells[2+i].querySelector('input').value) || 0;
-                    data[key].chairs[i] += parseInt(row.cells[10+i].querySelector('input').value) || 0;
+                    const val = parseInt(row.cells[2 + i].querySelector('input').value) || 0;
+                    data[key].desks[i] += val;
+                }
+                // 椅1-8
+                for (let i = 0; i < 8; i++) {
+                    const val = parseInt(row.cells[10 + i].querySelector('input').value) || 0;
+                    data[key].chairs[i] += val;
                 }
             }
+            
             if (type === 'inventory') inventoryData = data;
             else requiredData = data;
         }
 
         function loadCSV(type) {
-            const csvText = document.getElementById(type + 'CSV').value;
+            const csvText = document.getElementById(type + 'CSV').value.trim();
+            if (!csvText) return;
+            
             Papa.parse(csvText, {
                 header: false,
                 skipEmptyLines: true,
                 complete: function(results) {
                     const table = document.getElementById(type + 'Table');
                     table.tBodies[0].innerHTML = '';
-                    results.data.forEach(row => {
-                        if (row.length < 18) return;
-                        addEmptyRow(type + 'Table');
+                    
+                    results.data.forEach(rowData => {
+                        if (rowData.length < 18 || !rowData[0] || !rowData[1]) return;
+                        
+                        addRow(type);
                         const lastRow = table.tBodies[0].lastElementChild;
-                        lastRow.cells[0].querySelector('input').value = row[0];
-                        lastRow.cells[1].querySelector('input').value = row[1];
+                        
+                        // 部屋名、階
+                        lastRow.cells[0].querySelector('input').value = rowData[0];
+                        lastRow.cells[1].querySelector('input').value = rowData[1];
+                        
+                        // 机1-8
                         for (let i = 0; i < 8; i++) {
-                            lastRow.cells[2+i].querySelector('input').value = row[2+i];
-                            lastRow.cells[10+i].querySelector('input').value = row[10+i];
+                            lastRow.cells[2 + i].querySelector('input').value = rowData[2 + i] || 0;
+                        }
+                        // 椅1-8
+                        for (let i = 0; i < 8; i++) {
+                            lastRow.cells[10 + i].querySelector('input').value = rowData[10 + i] || 0;
                         }
                     });
+                    
                     updateTotals(type);
+                    document.getElementById(type + 'CSV').value = '';
                 }
             });
         }
 
         function clearAll() {
+            if (!confirm('全データをクリアしますか？')) return;
             inventoryData = {}; requiredData = {};
             document.getElementById('inventoryTable').tBodies[0].innerHTML = '';
             document.getElementById('requiredTable').tBodies[0].innerHTML = '';
             document.getElementById('inventoryCSV').value = '';
             document.getElementById('requiredCSV').value = '';
             document.getElementById('results').style.display = 'none';
+            addRow('inventory'); // 初期空行復元
+            addRow('required');
         }
 
         function optimize() {
             updateTotals('inventory');
             updateTotals('required');
             
-            if (Object.keys(inventoryData).length === 0 || Object.keys(requiredData).length === 0) {
-                alert('在庫と必要数の両方を入力してください');
+            if (Object.keys(inventoryData).length === 0) {
+                alert('今年度在庫を入力してください');
+                return;
+            }
+            if (Object.keys(requiredData).length === 0) {
+                alert('来年度必要数を入力してください');
                 return;
             }
 
@@ -232,148 +276,145 @@
         }
 
         function calculateOptimizations(inventory, required) {
-            const rooms = [...new Set([...Object.keys(inventory), ...Object.keys(required)])];
-            const plans = {};
+            const plans = {
+                distance: greedyOptimize(inventory, required, (from, to) => 
+                    Math.abs(from.floor - to.floor) * 10 + Math.abs(from.total - to.total)
+                ),
+                minCount: greedyOptimize(inventory, required, () => Math.random()),
+                minFloor: greedyOptimize(inventory, required, (from, to) => 
+                    from.floor === to.floor ? 0 : 100
+                )
+            };
 
-            // アルゴリズム1: 距離優先
-            plans.distance = greedyOptimize(inventory, required, (from, to) => {
-                const fDiff = Math.abs(from.floor - to.floor);
-                const sDiff = Math.abs((from.desks.reduce((a,b)=>a+b,0)+from.chairs.reduce((a,b)=>a+b)) - (to.desks.reduce((a,b)=>a+b,0)+to.chairs.reduce((a,b)=>a+b)));
-                return fDiff * 10 + sDiff;
+            // 共通のorders/returns計算
+            plans.distance.orders = {};
+            plans.distance.returns = {};
+            
+            Object.keys(required).forEach(room => {
+                plans.distance.orders[room] = {
+                    desks: required[room].desks.map((r, i) => Math.max(0, r - (inventory[room]?.desks[i] || 0))),
+                    chairs: required[room].chairs.map((r, i) => Math.max(0, r - (inventory[room]?.chairs[i] || 0)))
+                };
             });
-
-            // アルゴリズム2: 最小台数数
-            plans.minCount = greedyOptimize(inventory, required, () => Math.random());
-
-            // アルゴリズム3: 最小階移動
-            plans.minFloor = greedyOptimize(inventory, required, (from, to) => 
-                from.floor === to.floor ? 0 : 100
-            );
 
             return plans;
         }
 
         function greedyOptimize(inventory, required, costFn) {
-            const result = { moves: [], orders: {}, returns: {} };
+            const result = { moves: [] };
             const avail = JSON.parse(JSON.stringify(inventory));
-            const need = JSON.parse(JSON.stringify(required));
+            Object.keys(required).forEach(r => {
+                if (!avail[r]) avail[r] = { desks: new Array(8).fill(0), chairs: new Array(8).fill(0), floor: 1 };
+            });
 
-            for (let toRoom in need) {
-                result.orders[toRoom] = { desks: need[toRoom].desks.map((_,i) => Math.max(0, need[toRoom].desks[i] - (avail[toRoom]?.desks[i] || 0))), 
-                                        chairs: need[toRoom].chairs.map((_,i) => Math.max(0, need[toRoom].chairs[i] - (avail[toRoom]?.chairs[i] || 0))) };
+            // 各部屋のtotal計算用
+            Object.values(avail).forEach(room => {
+                room.total = room.desks.reduce((a,b)=>a+b,0) + room.chairs.reduce((a,b)=>a+b);
+            });
 
-                for (let fromRoom in avail) {
-                    if (fromRoom === toRoom) continue;
+            Object.keys(required).forEach(toKey => {
+                const toRoom = required[toKey];
+                Object.keys(avail).forEach(fromKey => {
+                    if (fromKey === toKey) return;
+                    const fromRoom = avail[fromKey];
+                    
                     for (let i = 0; i < 8; i++) {
-                        const move = Math.min(avail[fromRoom].desks[i] - (need[fromRoom]?.desks[i] || 0), 
-                                            need[toRoom].desks[i] - (avail[toRoom]?.desks[i] || 0));
+                        const surplus = Math.max(0, fromRoom.desks[i] - (required[fromKey]?.desks[i] || 0));
+                        const deficit = Math.max(0, toRoom.desks[i] - (avail[toKey]?.desks[i] || 0));
+                        const move = Math.min(surplus, deficit);
                         if (move > 0) {
-                            result.moves.push({ from: fromRoom, to: toRoom, type: '机'+(i+1)+'号', count: move });
-                            avail[fromRoom].desks[i] -= move;
-                            avail[toRoom].desks[i] += move;
+                            result.moves.push({ from: fromKey, to: toKey, type: `机${i+1}`, count: move });
+                            fromRoom.desks[i] -= move;
+                            avail[toKey].desks[i] += move;
                         }
                     }
                     for (let i = 0; i < 8; i++) {
-                        const move = Math.min(avail[fromRoom].chairs[i] - (need[fromRoom]?.chairs[i] || 0), 
-                                            need[toRoom].chairs[i] - (avail[toRoom]?.chairs[i] || 0));
+                        const surplus = Math.max(0, fromRoom.chairs[i] - (required[fromKey]?.chairs[i] || 0));
+                        const deficit = Math.max(0, toRoom.chairs[i] - (avail[toKey]?.chairs[i] || 0));
+                        const move = Math.min(surplus, deficit);
                         if (move > 0) {
-                            result.moves.push({ from: fromRoom, to: toRoom, type: '椅'+(i+1)+'号', count: move });
-                            avail[fromRoom].chairs[i] -= move;
-                            avail[toRoom].chairs[i] += move;
+                            result.moves.push({ from: fromKey, to: toKey, type: `椅${i+1}`, count: move });
+                            fromRoom.chairs[i] -= move;
+                            avail[toKey].chairs[i] += move;
                         }
                     }
-                }
-            }
-
-            // 倉庫戻し計算
-            for (let room in avail) {
-                const surplusDesks = avail[room].desks.map((d,i) => Math.max(0, d - (need[room]?.desks[i] || 0)));
-                const surplusChairs = avail[room].chairs.map((c,i) => Math.max(0, c - (need[room]?.chairs[i] || 0)));
-                if (surplusDesks.some(d => d > 0) || surplusChairs.some(c => c > 0)) {
-                    result.returns[room] = { desks: surplusDesks, chairs: surplusChairs };
-                }
-            }
+                });
+            });
 
             return result;
         }
 
         function displayResults(plans) {
-            let html = '';
-
-            // 最適化プラン
-            html += '<div style="margin-bottom: 20px;">';
+            // プラン表示
+            let plansHtml = '';
             Object.entries(plans).forEach(([name, plan]) => {
-                html += `<h4>${name === 'distance' ? '距離優先' : name === 'minCount' ? '最小台数数' : '最小階移動'}</h4>`;
-                html += `<div style="font-size: 13px;">${plan.moves.slice(0,10).map(m => `${m.from}→${m.to}: ${m.type}×${m.count}`).join('<br>')}${plan.moves.length > 10 ? `<br>... ほか${plan.moves.length-10}件` : ''}</div>`;
+                const label = name === 'distance' ? '距離優先' : name === 'minCount' ? '最小台数' : '最小階移動';
+                plansHtml += `<div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 6px; border-left: 4px solid ${name === 'distance' ? '#3498db' : name === 'minCount' ? '#f39c12' : '#27ae60'};">
+                    <strong>${label}</strong>: ${plan.moves.slice(0,8).map(m => `${m.from.split('|')[0]}→${m.to.split('|')[0]} ${m.type}×${m.count}`).join(' / ')}${plan.moves.length > 8 ? ` ...ほか${plan.moves.length-8}` : ''}
+                </div>`;
             });
-            html += '</div>';
+            document.getElementById('plans').innerHTML = plansHtml;
 
-            // 発注/倉庫戻し
-            html += '<table style="font-size: 11px;"><thead><tr><th>部屋</th><th>発注(机)</th><th>発注(椅)</th><th>倉庫戻し(机)</th><th>倉庫戻し(椅)</th></tr></thead><tbody>';
-            Object.entries(plans.distance.orders).forEach(([room, order]) => {
-                const returns = plans.distance.returns[room] || { desks: [0,0,0,0,0,0,0,0], chairs: [0,0,0,0,0,0,0,0] };
-                html += `<tr><td>${room}</td><td>${order.desks.join(',')}</td><td>${order.chairs.join(',')}</td><td>${returns.desks.join(',')}</td><td>${returns.chairs.join(',')}</td></tr>`;
+            // 発注/戻し
+            let ordersHtml = '<table style="font-size:11px;width:100%;"><thead><tr><th>部屋</th><th>発注机1-8</th><th>発注椅1-8</th></tr></thead><tbody>';
+            Object.entries(plans.distance.orders || {}).forEach(([room, order]) => {
+                ordersHtml += `<tr><td>${room.split('|')[0]}</td><td>${order.desks.join('-')}</td><td>${order.chairs.join('-')}</td></tr>`;
             });
-            html += '</tbody></table>';
+            ordersHtml += '</tbody></table>';
+            document.getElementById('orders').innerHTML = ordersHtml;
 
-            document.getElementById('plans').innerHTML = html;
-
-            // 比較表
-            displayComparison(plans.distance);
-
+            displayComparison();
             document.getElementById('results').style.display = 'block';
-            document.getElementById('orders').innerHTML = html;
         }
 
-        function displayComparison(plan) {
-            const html = '<table><thead><tr><th>部屋</th>' +
-                Array.from({length: 8}, (_,i) => `<th>机${i+1}</th>`).join('') +
-                Array.from({length: 8}, (_,i) => `<th>椅${i+1}</th>`).join('') +
-                '<th>状態</th></tr></thead><tbody>';
+        function displayComparison() {
+            const rooms = [...new Set([...Object.keys(inventoryData), ...Object.keys(requiredData)])];
+            let html = '<table style="font-size:11px;"><thead><tr><th>部屋</th>';
+            for (let i = 1; i <= 8; i++) html += `<th>机${i}</th>`;
+            for (let i = 1; i <= 8; i++) html += `<th>椅${i}</th></tr></thead><tbody>`;
             
-            Object.keys(inventoryData).forEach(room => {
-                const inv = inventoryData[room];
-                const req = requiredData[room] || { desks: [0,0,0,0,0,0,0,0], chairs: [0,0,0,0,0,0,0,0] };
-                const status = [];
+            rooms.forEach(room => {
+                const inv = inventoryData[room] || { desks: new Array(8).fill(0), chairs: new Array(8).fill(0) };
+                const req = requiredData[room] || { desks: new Array(8).fill(0), chairs: new Array(8).fill(0) };
                 
+                html += `<tr><td>${room.split('|')[0]}</td>`;
                 for (let i = 0; i < 8; i++) {
-                    const deskDiff = inv.desks[i] - req.desks[i];
-                    status.push(deskDiff > 0 ? 'surplus' : deskDiff < 0 ? 'deficit' : 'sufficient');
+                    const diff = inv.desks[i] - req.desks[i];
+                    const className = diff > 0 ? 'surplus' : diff < 0 ? 'deficit' : 'sufficient';
+                    html += `<td class="${className}">${inv.desks[i]}(${diff >= 0 ? '+' : ''}${diff})</td>`;
                 }
                 for (let i = 0; i < 8; i++) {
-                    const chairDiff = inv.chairs[i] - req.chairs[i];
-                    status.push(chairDiff > 0 ? 'surplus' : chairDiff < 0 ? 'deficit' : 'sufficient');
+                    const diff = inv.chairs[i] - req.chairs[i];
+                    const className = diff > 0 ? 'surplus' : diff < 0 ? 'deficit' : 'sufficient';
+                    html += `<td class="${className}">${inv.chairs[i]}(${diff >= 0 ? '+' : ''}${diff})</td>`;
                 }
-                
-                html += `<tr><td>${room}</td>`;
-                [...inv.desks, ...inv.chairs].forEach((v, i) => {
-                    html += `<td class="${status[i]}">${v}</td>`;
-                });
-                html += `<td>${status.map(s => s.slice(0,4)).join('/')}</td></tr>`;
+                html += '</tr>';
             });
             html += '</tbody></table>';
             document.getElementById('comparison').innerHTML = html;
         }
 
         function downloadCSV() {
-            const csv = generateCSV();
+            const csv = [
+                ['部屋', '階', '机1-8', '椅1-8', '差分'],
+                ...Object.entries(inventoryData).map(([k, v]) => [
+                    v.room, v.floor, v.desks.join(','), v.chairs.join(','), 
+                    v.desks.map((d,i) => d - (requiredData[k]?.desks[i] || 0)).join(',')
+                ])
+            ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+            
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = '教室家具最適化結果.csv';
+            link.download = `教室家具最適化_${new Date().toISOString().slice(0,10)}.csv`;
             link.click();
         }
 
-        function generateCSV() {
-            return '部屋,階,机1-8,椅1-8,発注,倉庫戻し\n' +
-                Object.entries(inventoryData).map(([k,v]) => 
-                    `${v.room},${v.floor},"${v.desks.join(',')}","${v.chairs.join(',')}",...,...`
-                ).join('\n');
-        }
-
-        // 初期行追加
-        addRow('inventory');
-        addRow('required');
+        // ページ読み込み時に初期空行追加
+        window.addEventListener('load', () => {
+            addRow('inventory');
+            addRow('required');
+        });
     </script>
 </body>
 </html>
