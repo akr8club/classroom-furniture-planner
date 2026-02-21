@@ -1,77 +1,105 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>教室家具最適化アプリ</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <style>table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:5px;} .move{background:#ff0;} .order{background:#f90;} .back{background:#9f9;}</style>
+    <title>教室家具移動計算アプリ</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5/papaparse.min.js"></script>
+    <style>table{border-collapse:collapse;}td{padding:5px;border:1px solid #ccc;} .surplus{background:green;color:white;}.deficit{background:red;color:white;}</style>
 </head>
 <body>
-  <h1>教室家具移動最適化</h1>
-  
-  <section>
-    <h3>今年度在庫入力</h3>
-    <input type="file" id="csvCurrent" accept=".csv">
-    <div contenteditable id="pasteCurrent">Excelコピペここ</div>
-    <table id="tableCurrent"></table>
-  </section>
-  
-  <section>
-    <h3>来年度必要数</h3>
-    <input type="file" id="csvNext" accept=".csv">
-    <div contenteditable id="pasteNext">Excelコピペここ</div>
-    <table id="tableNext"></table>
-  </section>
-  
-  <button onclick="calculate()">計算</button>
-  <div id="results"></div>
-
-  <script>
-    // テーブル生成・paste処理（詳細省略、web:20/21参照）
-    document.querySelectorAll('div[contenteditable]').forEach(el => {
-      el.addEventListener('paste', e => {
-        e.preventDefault();
-        const items = (e.clipboardData || window.clipboardData).items;
-        // TSV parseしてテーブル更新
-      });
-    });
+    <h1>教室家具最適移動計算</h1>
     
-    // CSV処理
-    document.getElementById('csvCurrent').addEventListener('change', e => loadCSV(e.target.files[0], 'current'));
-    // loadCSV関数: Papa.parse使用 [web:29]
+    <!-- 設定 -->
+    <label>部屋数: <input id="roomCount" type="number" min="1" max="50" value="5"></label>
+    <label>階数: <input id="floorCount" type="number" min="1" max="10" value="3"></label>
+    <button onclick="generateTables()">テーブル生成</button>
     
-    // 最適化計算
-    function calculate() {
-      // データ抽出: rooms = {roomId: {floor, chair: [0-7], desk: [0-7]}}
-      // 各サイズ・種類で最適化
-      const moves = []; // 移動リスト
-      const orders = {}; // 発注
-      const backs = {}; // 戻し
-      
-      // 簡易最適化ロジック（全過剰から不足へ割り当て）
-      Object.keys(rooms).forEach(room => {
-        ['chair', 'desk'].forEach(type => {
-          for(let size=1; size<=8; size++) {
-            const idx = size-1;
-            const current = currentData[room][type][idx];
-            const need = nextData[room][type][idx];
-            const diff = current - need;
-            if(diff > 0) backs[`${room}-${type}-${size}`] = diff;
-            else if(diff < 0) orders[`${room}-${type}-${size}`] = -diff;
-          }
-        });
-      });
-      // 詳細移動計算省略（供給過剰を不足にマッチ）
-      
-      // 結果表示
-      document.getElementById('results').innerHTML = `
-        <h3>移動計画</h3><pre>${moves.join('\n')}</pre>
-        <h3>発注</h3><pre>${JSON.stringify(orders,null,2)}</pre>
-        <h3>倉庫戻し</h3><pre>${JSON.stringify(backs,null,2)}</pre>
-        <table id="compareTable">${generateCompareTable()}</table>
-      `;
-    }
-  </script>
+    <!-- 今年度入力 -->
+    <h2>今年度在庫 (各部屋の机/椅子1-8号)</h2>
+    <div id="currentTables"></div>
+    
+    <!-- 来年度入力 -->
+    <h2>来年度必要数</h2>
+    <div id="targetTables"></div>
+    
+    <!-- CSV -->
+    <h2>CSVアップロード/コピペ</h2>
+    <input type="file" id="csvFile" accept=".csv"><br>
+    <textarea id="csvText" rows="5" cols="80" placeholder="Excelからコピペ (タブ区切り可)"></textarea>
+    <button onclick="parseCSV()">CSV読み込み</button>
+    
+    <button onclick="calculate()">計算実行</button>
+    
+    <!-- 結果 -->
+    <div id="results"></div>
+    
+    <script>
+        let rooms = []; // [{floor:'1F', name:'101室'}]
+        let currentData = {}; // {roomIndex: {desk: [0,0,...], chair: [0,0,...]}}
+        let targetData = {}; // {roomIndex: {desk: total, chair: total}}
+        
+        function generateTables() {
+            const roomCt = parseInt(document.getElementById('roomCount').value);
+            const floorCt = parseInt(document.getElementById('floorCount').value);
+            rooms = [];
+            let htmlCurrent = '<h3>机</h3><table><tr><th>部屋</th>', htmlTarget = '<table><tr><th>部屋</th>';
+            let htmlChairCurrent = '<h3>椅子</h3><table><tr><th>部屋</th>', htmlChairTarget = '<table><tr><th>部屋</th>';
+            
+            for(let f=1; f<=floorCt; f++) {
+                for(let r=1; r<=Math.ceil(roomCt/floorCt); r++) {
+                    const roomId = rooms.length;
+                    const roomName = `${f}F-${String(r).padStart(3,'0')}室`;
+                    rooms.push({floor: `${f}F`, name: roomName});
+                    
+                    htmlCurrent += `<th colspan="8">${roomName}</th>`;
+                    htmlChairCurrent += `<th colspan="8">${roomName}</th>`;
+                    htmlTarget += '<td colspan="8"></td>';
+                    htmlChairTarget += '<td colspan="8"></td>';
+                    
+                    currentData[roomId] = {desk: new Array(8).fill(0), chair: new Array(8).fill(0)};
+                    targetData[roomId] = {desk: 0, chair: 0};
+                }
+            }
+            
+            // サイズヘッダ
+            for(let i=1; i<=8; i++) htmlCurrent += `<th>${i}号</th><th>合計</th>`;
+            htmlCurrent += '</tr>';
+            for(let i=1; i<=8; i++) htmlChairCurrent += `<th>${i}号</th><th>合計</th>`;
+            htmlChairCurrent += '</tr>';
+            htmlTarget += '<td colspan="9">全サイズ合計</td></tr>';
+            htmlChairTarget += '<td colspan="9">全サイズ合計</td></tr>';
+            
+            // 入力行生成 (簡略)
+            document.getElementById('currentTables').innerHTML = htmlCurrent + htmlChairCurrent;
+            document.getElementById('targetTables').innerHTML = htmlTarget + htmlChairTarget;
+            // 実際は動的input追加
+        }
+        
+        function parseCSV() {
+            const file = document.getElementById('csvFile').files[0];
+            const text = document.getElementById('csvText').value;
+            if(file) Papa.parse(file, {complete: (res) => loadCSVData(res.data)});
+            else if(text) Papa.parse(text, {complete: (res) => loadCSVData(res.data)});
+        }
+        
+        function loadCSVData(rows) {
+            // CSV→dataマッピング (ヘッダから部屋特定、数値入力)
+            console.log(rows); // 実装省略: 部屋/サイズ別集計
+        }
+        
+        function calculate() {
+            // 1. 総在庫/必要数集計
+            let totalCurrentDesk = new Array(8).fill(0), totalTargetDesk = new Array(8).fill(0); // サイズ別
+            // ...集計ループ
+            
+            // 2. 移動最適化 (余剰部屋から不足へ割り当て)
+            let moves = {}, orders = {}, storage = {};
+            
+            // 3. 出力テーブル生成
+            let resultHtml = '<h2>移動提案</h2><table>...色分け...</table>';
+            resultHtml += '<h2>移動前|後</h2><table><tr><td>前</td><td>後</td></tr>...</table>';
+            document.getElementById('results').innerHTML = resultHtml;
+        }
+    </script>
 </body>
 </html>
 
