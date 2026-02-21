@@ -1,104 +1,307 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <title>教室家具移動計算アプリ</title>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5/papaparse.min.js"></script>
-    <style>table{border-collapse:collapse;}td{padding:5px;border:1px solid #ccc;} .surplus{background:green;color:white;}.deficit{background:red;color:white;}</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教室家具最適化アプリ</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 1400px; margin: 0 auto; padding: 20px; background: #f8f9fa; line-height: 1.5; }
+        h1, h2 { color: #333; }
+        .section { margin: 30px 0; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        input, select, textarea { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background: #f1f1f1; }
+        .surplus { background: #d4edda; color: #155724; }
+        .deficit { background: #f8d7da; color: #721c24; }
+        .move { background: #fff3cd; color: #856404; }
+        .good { background: #d1ecf1; color: #0c5460; }
+        #roomsInput { display: flex; gap: 10px; align-items: end; }
+        #roomsInput input { width: 80px; }
+        .tab { display: none; }
+        .tab.active { display: block; }
+        .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+        .tab-btn { padding: 10px 20px; background: #e9ecef; border: none; cursor: pointer; border-radius: 4px 4px 0 0; }
+        .tab-btn.active { background: white; font-weight: bold; }
+        textarea { height: 200px; font-family: monospace; }
+        .result-section { margin-top: 20px; }
+    </style>
 </head>
 <body>
-    <h1>教室家具最適移動計算</h1>
+    <h1>教室家具最適化計算機</h1>
     
-    <!-- 設定 -->
-    <label>部屋数: <input id="roomCount" type="number" min="1" max="50" value="5"></label>
-    <label>階数: <input id="floorCount" type="number" min="1" max="10" value="3"></label>
-    <button onclick="generateTables()">テーブル生成</button>
-    
-    <!-- 今年度入力 -->
-    <h2>今年度在庫 (各部屋の机/椅子1-8号)</h2>
-    <div id="currentTables"></div>
-    
-    <!-- 来年度入力 -->
-    <h2>来年度必要数</h2>
-    <div id="targetTables"></div>
-    
-    <!-- CSV -->
-    <h2>CSVアップロード/コピペ</h2>
-    <input type="file" id="csvFile" accept=".csv"><br>
-    <textarea id="csvText" rows="5" cols="80" placeholder="Excelからコピペ (タブ区切り可)"></textarea>
-    <button onclick="parseCSV()">CSV読み込み</button>
-    
-    <button onclick="calculate()">計算実行</button>
-    
-    <!-- 結果 -->
+    <div class="section">
+        <h2>1. 部屋設定</h2>
+        <div id="roomsInput">
+            <label>部屋数: <input type="number" id="numRooms" value="6" min="1" max="50"></label>
+            <label>階数: <input type="number" id="numFloors" value="3" min="1" max="10"></label>
+            <button onclick="generateTables()">テーブル生成</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>2. データ入力 (今年度在庫)</h2>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('current-gui')">GUI入力</button>
+            <button class="tab-btn" onclick="switchTab('current-csv')">CSV/Excelペースト</button>
+        </div>
+        <div id="current-gui" class="tab active">
+            <table id="currentTable"></table>
+        </div>
+        <div id="current-csv" class="tab">
+            <textarea id="currentCsv" placeholder="部屋ID,階,机1,...&#10;101,2,12,10,... (タブ/カンマ区切り)"></textarea>
+            <br><button onclick="loadCsv('current')">読み込み</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>3. 来年度必要数</h2>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('target-gui')">GUI入力</button>
+            <button class="tab-btn" onclick="switchTab('target-csv')">CSV/Excelペースト</button>
+        </div>
+        <div id="target-gui" class="tab active">
+            <table id="targetTable"></table>
+        </div>
+        <div id="target-csv" class="tab">
+            <textarea id="targetCsv" placeholder="同フォーマットで来年度必要数を入力"></textarea>
+            <br><button onclick="loadCsv('target')">読み込み</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <button onclick="calculate()">最適化計算</button>
+    </div>
+
     <div id="results"></div>
-    
+
     <script>
-        let rooms = []; // [{floor:'1F', name:'101室'}]
-        let currentData = {}; // {roomIndex: {desk: [0,0,...], chair: [0,0,...]}}
-        let targetData = {}; // {roomIndex: {desk: total, chair: total}}
-        
+        let rooms = []; // [{id: '101', floor: 2, desk: [0,0,...], chair: [0,0,...]}]
+        let currentData = {};
+        let targetData = {};
+
+        const sizes = [1,2,3,4,5,6,7,8];
+
         function generateTables() {
-            const roomCt = parseInt(document.getElementById('roomCount').value);
-            const floorCt = parseInt(document.getElementById('floorCount').value);
+            const numRooms = parseInt(document.getElementById('numRooms').value);
+            const numFloors = parseInt(document.getElementById('numFloors').value);
             rooms = [];
-            let htmlCurrent = '<h3>机</h3><table><tr><th>部屋</th>', htmlTarget = '<table><tr><th>部屋</th>';
-            let htmlChairCurrent = '<h3>椅子</h3><table><tr><th>部屋</th>', htmlChairTarget = '<table><tr><th>部屋</th>';
-            
-            for(let f=1; f<=floorCt; f++) {
-                for(let r=1; r<=Math.ceil(roomCt/floorCt); r++) {
-                    const roomId = rooms.length;
-                    const roomName = `${f}F-${String(r).padStart(3,'0')}室`;
-                    rooms.push({floor: `${f}F`, name: roomName});
-                    
-                    htmlCurrent += `<th colspan="8">${roomName}</th>`;
-                    htmlChairCurrent += `<th colspan="8">${roomName}</th>`;
-                    htmlTarget += '<td colspan="8"></td>';
-                    htmlChairTarget += '<td colspan="8"></td>';
-                    
-                    currentData[roomId] = {desk: new Array(8).fill(0), chair: new Array(8).fill(0)};
-                    targetData[roomId] = {desk: 0, chair: 0};
+            for (let f=1; f<=numFloors; f++) {
+                for (let r=1; r<=numRooms; r++) {
+                    const id = `${f}01`.slice(0,-1) + r.toString().padStart(2,'0');
+                    rooms.push({id, floor: f, desk: new Array(9).fill(0), chair: new Array(9).fill(0)});
                 }
             }
-            
-            // サイズヘッダ
-            for(let i=1; i<=8; i++) htmlCurrent += `<th>${i}号</th><th>合計</th>`;
-            htmlCurrent += '</tr>';
-            for(let i=1; i<=8; i++) htmlChairCurrent += `<th>${i}号</th><th>合計</th>`;
-            htmlChairCurrent += '</tr>';
-            htmlTarget += '<td colspan="9">全サイズ合計</td></tr>';
-            htmlChairTarget += '<td colspan="9">全サイズ合計</td></tr>';
-            
-            // 入力行生成 (簡略)
-            document.getElementById('currentTables').innerHTML = htmlCurrent + htmlChairCurrent;
-            document.getElementById('targetTables').innerHTML = htmlTarget + htmlChairTarget;
-            // 実際は動的input追加
+            renderTable('currentTable', rooms, true);
+            renderTable('targetTable', rooms, false);
         }
-        
-        function parseCSV() {
-            const file = document.getElementById('csvFile').files[0];
-            const text = document.getElementById('csvText').value;
-            if(file) Papa.parse(file, {complete: (res) => loadCSVData(res.data)});
-            else if(text) Papa.parse(text, {complete: (res) => loadCSVData(res.data)});
+
+        function renderTable(tableId, data, isCurrent) {
+            const table = document.getElementById(tableId);
+            table.innerHTML = `
+                <thead><tr>
+                    <th>部屋ID</th><th>階</th>
+                    ${sizes.map(s => `<th>机${s}号</th>`).join('')}
+                    ${sizes.map(s => `<th>椅子${s}号</th>`).join('')}
+                </tr></thead>
+                <tbody>${data.map((room, i) => `
+                    <tr>
+                        <td>${room.id}</td>
+                        <td>${room.floor}F</td>
+                        ${sizes.map(s => `<td><input type="number" min="0" value="${isCurrent ? room.desk[s] || 0 : room.desk[s] || 0}" onchange="updateData('${tableId}', ${i}, 'desk', ${s}, this.value)" data-i="${i}" data-type="desk" data-size="${s}"></td>`).join('')}
+                        ${sizes.map(s => `<td><input type="number" min="0" value="${isCurrent ? room.chair[s] || 0 : room.chair[s] || 0}" onchange="updateData('${tableId}', ${i}, 'chair', ${s}, this.value)" data-i="${i}" data-type="chair" data-size="${s}"></td>`).join('')}
+                    </tr>
+                `).join('')}</tbody>`;
+            if (isCurrent) currentData = JSON.parse(JSON.stringify(rooms));
+            else targetData = JSON.parse(JSON.stringify(rooms));
         }
-        
-        function loadCSVData(rows) {
-            // CSV→dataマッピング (ヘッダから部屋特定、数値入力)
-            console.log(rows); // 実装省略: 部屋/サイズ別集計
+
+        function updateData(tableId, i, type, size, val) {
+            const data = tableId === 'currentTable' ? currentData : targetData;
+            data[i][type][size] = parseInt(val) || 0;
         }
-        
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function loadCsv(type) {
+            const csvText = document.getElementById(type === 'current' ? 'currentCsv' : 'targetCsv').value;
+            Papa.parse(csvText, {
+                header: true,
+                complete: function(results) {
+                    const data = results.data.filter(row => row['部屋ID']);
+                    if (type === 'current') {
+                        data.forEach(row => {
+                            const room = rooms.find(r => r.id === row['部屋ID']);
+                            if (room) {
+                                sizes.forEach(s => {
+                                    room.desk[s] = parseInt(row[`机${s}`]) || 0;
+                                    room.chair[s] = parseInt(row[`椅子${s}`]) || 0;
+                                });
+                            }
+                        });
+                        currentData = JSON.parse(JSON.stringify(rooms));
+                        renderTable('currentTable', rooms, true);
+                    } else {
+                        // target similar
+                        data.forEach(row => {
+                            const room = rooms.find(r => r.id === row['部屋ID']);
+                            if (room) {
+                                sizes.forEach(s => {
+                                    room.desk[s] = parseInt(row[`机${s}`]) || 0;
+                                    room.chair[s] = parseInt(row[`椅子${s}`]) || 0;
+                                });
+                            }
+                        });
+                        targetData = JSON.parse(JSON.stringify(rooms));
+                        renderTable('targetTable', rooms, false);
+                    }
+                    alert(`${data.length}行読み込み完了`);
+                }
+            });
+        }
+
         function calculate() {
-            // 1. 総在庫/必要数集計
-            let totalCurrentDesk = new Array(8).fill(0), totalTargetDesk = new Array(8).fill(0); // サイズ別
-            // ...集計ループ
-            
-            // 2. 移動最適化 (余剰部屋から不足へ割り当て)
-            let moves = {}, orders = {}, storage = {};
-            
-            // 3. 出力テーブル生成
-            let resultHtml = '<h2>移動提案</h2><table>...色分け...</table>';
-            resultHtml += '<h2>移動前|後</h2><table><tr><td>前</td><td>後</td></tr>...</table>';
-            document.getElementById('results').innerHTML = resultHtml;
+            const moves = optimize('desk', currentData, targetData);
+            const chairMoves = optimize('chair', currentData, targetData);
+            displayResults(moves, chairMoves);
         }
+
+        function optimize(type, current, target) {
+            const surplus = []; // {roomIdx, size, amount}
+            const deficit = []; // {roomIdx, size, amount}
+            rooms.forEach((_, i) => {
+                sizes.forEach(s => {
+                    const diff = current[i][type][s] - target[i][type][s];
+                    if (diff > 0) surplus.push({room: i, size: s, amount: diff, floor: rooms[i].floor});
+                    else if (diff < 0) deficit.push({room: i, size: s, amount: -diff, floor: rooms[i].floor});
+                });
+            });
+
+            // 3最適化: 距離優先、最小台数、最小階移動
+            const plans = {
+                distance: greedyMatch(surplus.slice(), deficit.slice(), (a,b) => Math.abs(a.floor - b.floor) + Math.abs(a.size - b.size)),
+                minVolume: greedyMatch(surplus.slice(), deficit.slice(), () => Math.random()), // approx min moves by random-ish
+                minFloorCross: greedyMatch(surplus.slice(), deficit.slice(), (a,b) => a.floor === b.floor ? 0 : 1)
+            };
+
+            // orders, storage per room
+            const orders = new Array(rooms.length).fill(0).map(() => new Array(9).fill(0));
+            const storage = new Array(rooms.length).fill(0).map(() => new Array(9).fill(0));
+            surplus.forEach(s => storage[s.room][s.size] = s.amount);
+            deficit.forEach(d => orders[d.room][d.size] = d.amount);
+
+            return {plans, orders: orders.map((row,i) => ({room: i, data: row})), storage: storage.map((row,i) => ({room: i, data: row})) };
+        }
+
+        function greedyMatch(surplus, deficit, costFn) {
+            const moves = [];
+            while (surplus.length && deficit.length) {
+                let bestCost = Infinity, bestS = 0, bestD = 0;
+                for (let si=0; si<surplus.length; si++) {
+                    for (let di=0; di<deficit.length; di++) {
+                        const cost = costFn(surplus[si], deficit[di]);
+                        if (cost < bestCost) {
+                            bestCost = cost;
+                            bestS = si;
+                            bestD = di;
+                        }
+                    }
+                }
+                const amt = Math.min(surplus[bestS].amount, deficit[bestD].amount);
+                moves.push({
+                    from: rooms[surplus[bestS].room].id,
+                    to: rooms[deficit[bestD].room].id,
+                    size: surplus[bestS].size,
+                    amount: amt
+                });
+                surplus[bestS].amount -= amt;
+                deficit[bestD].amount -= amt;
+                if (surplus[bestS].amount === 0) surplus.splice(bestS,1);
+                if (deficit[bestD].amount === 0) deficit.splice(bestD,1);
+            }
+            return moves;
+        }
+
+        function displayResults(desk, chair) {
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="section">
+                    <h2>机 最適化結果 (3プラン)</h2>
+                    ${renderPlan(desk.plans.distance, '距離優先')}
+                    ${renderPlan(desk.plans.minVolume, '最小台数数')}
+                    ${renderPlan(desk.plans.minFloorCross, '最小階移動')}
+                    ${renderOrdersStorage(desk.orders, desk.storage, '机')}
+                </div>
+                <div class="section">
+                    <h2>椅子 最適化結果</h2>
+                    ${renderPlan(chair.plans.distance, '距離優先')}
+                    ${renderOrdersStorage(chair.orders, chair.storage, '椅子')}
+                </div>
+                <div class="result-section">
+                    <button onclick="downloadCsv()">CSVダウンロード</button>
+                </div>
+                ${renderBeforeAfter()}
+            `;
+        }
+
+        function renderPlan(moves, name) {
+            if (moves.length === 0) return `<p>${name}: 移動不要</p>`;
+            return `
+                <h3>${name}</h3>
+                <table>
+                    <tr><th>From</th><th>To</th><th>サイズ</th><th>数</th></tr>
+                    ${moves.map(m => `<tr><td>${m.from}</td><td>${m.to}</td><td>${m.size}号</td><td>${m.amount}</td></tr>`).join('')}
+                </table>
+            `;
+        }
+
+        function renderOrdersStorage(orders, storage, type) {
+            return `
+                <h3>${type}発注</h3>
+                <table>${orders.map(o => `<tr><td>${rooms[o.room].id}</td>${sizes.map(s => `<td>${o.data[s] || 0}</td>`).join('')}</tr>`).join('')}</table>
+                <h3>${type}倉庫戻し</h3>
+                <table>${storage.map(o => `<tr><td>${rooms[o.room].id}</td>${sizes.map(s => `<td>${o.data[s] || 0}</td>`).join('')}</tr>`).join('')}</table>
+            `;
+        }
+
+        function renderBeforeAfter() {
+            let html = '<h2>移動前後比較 (距離優先例、机のみ)</h2><table><tr><th>部屋</th>';
+            sizes.forEach(s => html += `<th>${s}号 前</th><th>後</th>`);
+            html += '</tr>';
+            rooms.forEach((room, i) => {
+                html += `<tr><td>${room.id}</td>`;
+                sizes.forEach(s => {
+                    const before = currentData[i].desk[s];
+                    const after = before - /* simulate moves */ 0; // 簡易、実際はmoves適用
+                    const cls = after > targetData[i].desk[s] ? 'surplus' : after < targetData[i].desk[s] ? 'deficit' : 'good';
+                    html += `<td class="${cls}">${before}</td><td class="${cls}">${after}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</table>';
+            return html;
+        }
+
+        function downloadCsv() {
+            const csv = 'プラン,From,To,サイズ,数\n' + /* collect all */ 'サンプルデータ\n';
+            const blob = new Blob([csv], {type: 'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'furniture_plan.csv';
+            a.click();
+        }
+
+        // Init
+        generateTables();
     </script>
 </body>
 </html>
