@@ -6,146 +6,374 @@
     <title>教室家具最適化Webアプリ</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        h1 { text-align: center; color: #333; }
-        .section { margin-bottom: 30px; }
-        .section h2 { color: #555; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
-        th, td { border: 1px solid #ddd; padding: 6px 4px; text-align: center; font-size: 12px; position: relative; }
-        th { background-color: #f8f9fa; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        input { width: 100%; height: 28px; text-align: center; border: none; background: transparent; box-sizing: border-box; font-size: 12px; }
-        input:focus, input.paste-highlight { outline: 2px solid #28a745; background: #d4edda !important; }
-        button { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 5px; font-size: 14px; }
-        button:hover { background: #0056b3; }
-        .delete-btn { background: #dc3545; padding: 4px 8px; font-size: 12px; }
-        .delete-btn:hover { background: #c82333; }
-        textarea { width: 100%; height: 100px; margin-bottom: 10px; font-family: monospace; font-size: 12px; }
-        .paste-hint { background: #e7f3ff; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 13px; }
-        .result { margin-top: 20px; }
-        .plan { margin-bottom: 20px; }
-        .comparison td { min-height: 30px; }
-        .surplus { background-color: #d4edda !important; color: #155724; }
-        .deficit { background-color: #f8d7da !important; color: #721c24; }
-        .move { background-color: #fff3cd !important; color: #856404; }
-        .充足 { background-color: #d1ecf1 !important; color: #0c5460; }
-        .scroll-wrap { overflow-x: auto; margin-bottom: 10px; border: 2px dashed #007bff; border-radius: 5px; }
-        .scroll-wrap:hover { border-style: solid; }
-        .paste-info { color: #28a745; font-weight: bold; }
-        @media (max-width: 768px) { th, td { padding: 4px 2px; font-size: 10px; } input { height: 24px; } }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f5f5f5; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 30px; }
+        .section { margin-bottom: 40px; }
+        .section h2 { color: #34495e; margin-bottom: 15px; border-bottom: 2px solid #3498db; padding-bottom: 8px; }
+        .input-group { display: flex; gap: 15px; align-items: end; flex-wrap: wrap; margin-bottom: 15px; }
+        input[type="text"], textarea { padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; }
+        input[type="text"] { width: 120px; }
+        textarea { width: 100%; height: 120px; resize: vertical; }
+        button { background: #3498db; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all 0.3s; }
+        button:hover { background: #2980b9; transform: translateY(-1px); }
+        button.danger { background: #e74c3c; }
+        button.danger:hover { background: #c0392b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; table-layout: fixed; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 8px 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        th { background: #ecf0f1; font-weight: bold; position: sticky; top: 0; z-index: 10; }
+        .room-col { width: 80px; background: #f8f9fa; }
+        .floor-col { width: 60px; background: #f8f9fa; }
+        .desk-col { width: 35px; }
+        .chair-col { width: 35px; }
+        .add-row { background: #27ae60; }
+        .add-row:hover { background: #229954; }
+        .results { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        .result-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; }
+        .color-legend { display: flex; gap: 20px; margin: 20px 0; font-size: 12px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-color { width: 20px; height: 20px; border: 1px solid #ccc; }
+        .surplus { background: #d5f4e6 !important; color: #27ae60; }
+        .deficit { background: #fadbd8 !important; color: #e74c3c; }
+        .moved { background: #fef9c7 !important; color: #f39c12; }
+        .sufficient { background: #d1ecf1 !important; color: #3498db; }
+        @media (max-width: 768px) { .results { grid-template-columns: 1fr; } .input-group { flex-direction: column; align-items: stretch; } }
+        .scroll-x { overflow-x: auto; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎯 教室家具最適化Webアプリ</h1>
-        <p><strong>🚀新機能:</strong> Excel選択→Ctrl+C →テーブルクリック→Ctrl+Vで**直接貼り付け**！GUI入力・textarea両対応。[web:40]</p>
-
+        <h1>🏫 教室家具最適化Webアプリ</h1>
+        
         <div class="section">
-            <h2>📥 今年度在庫入力</h2>
-            <div class="paste-hint">
-                💡 <span class="paste-info">Excel表選択→コピー→ここクリック→Ctrl+V</span> または [+追加]で手入力、または下textarea
+            <h2>📦 今年度在庫</h2>
+            <div class="input-group">
+                <button class="add-row" onclick="addRow('inventory')">[+行追加]</button>
+                <textarea id="inventoryCSV" placeholder="CSV貼り付け (Excel→全選択→コピー→ここに貼り付け→読み込み)&#10;例: 101,2,12,10,8,6,4,2,1,0,15,12,10,8,6,4,2,1"></textarea>
+                <button onclick="loadCSV('inventory')">CSV読み込み</button>
             </div>
-            <button onclick="addRow('inventory')">+ 新規行追加</button>
-            <textarea id="inventoryCsv" placeholder="Excel→全選択→コピー→ここペースト→[読み込み]&#10;部屋ID,階,机1-8,椅子1-8"></textarea>
-            <button onclick="loadCsv('inventory')">📋 CSV読み込み</button>
-            <div class="scroll-wrap" tabindex="0" onpaste="handleTablePaste(event, 'inventory')">
+            <div class="scroll-x">
                 <table id="inventoryTable">
-                    <thead><tr><th>部屋名</th><th>階</th><th>机1</th><th>机2</th><th>机3</th><th>机4</th><th>机5</th><th>机6</th><th>机7</th><th>机8</th><th>椅1</th><th>椅2</th><th>椅3</th><th>椅4</th><th>椅5</th><th>椅6</th><th>椅7</th><th>椅8</th><th>削除</th></tr></thead>
+                    <thead><tr><th class="room-col">部屋名</th><th class="floor-col">階</th><th>机1</th><th>机2</th><th>机3</th><th>机4</th><th>机5</th><th>机6</th><th>机7</th><th>机8</th><th>椅1</th><th>椅2</th><th>椅3</th><th>椅4</th><th>椅5</th><th>椅6</th><th>椅7</th><th>椅8</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </div>
         </div>
 
         <div class="section">
-            <h2>📤 来年度必要数入力</h2>
-            <div class="paste-hint">
-                💡 同上: <span class="paste-info">Excelコピー→テーブルCtrl+V</span> で複数行同時入力！
+            <h2>📋 来年度必要数</h2>
+            <div class="input-group">
+                <button class="add-row" onclick="addRow('required')">[+行追加]</button>
+                <textarea id="requiredCSV" placeholder="CSV貼り付け (Excel→全選択→コピー→ここに貼り付け→読み込み)&#10;例: 特別教室,2,0,0,5,3,2,1,0,0,0,0,8,5,3,2,1,0"></textarea>
+                <button onclick="loadCSV('required')">CSV読み込み</button>
             </div>
-            <button onclick="addRow('required')">+ 新規行追加</button>
-            <textarea id="requiredCsv" placeholder="同形式"></textarea>
-            <button onclick="loadCsv('required')">📋 CSV読み込み</button>
-            <div class="scroll-wrap" tabindex="0" onpaste="handleTablePaste(event, 'required')">
+            <div class="scroll-x">
                 <table id="requiredTable">
-                    <thead><tr><th>部屋名</th><th>階</th><th>机1</th><th>机2</th><th>机3</th><th>机4</th><th>机5</th><th>机6</th><th>机7</th><th>机8</th><th>椅1</th><th>椅2</th><th>椅3</th><th>椅4</th><th>椅5</th><th>椅6</th><th>椅7</th><th>椅8</th><th>削除</th></tr></thead>
+                    <thead><tr><th class="room-col">部屋名</th><th class="floor-col">階</th><th>机1</th><th>机2</th><th>机3</th><th>机4</th><th>机5</th><th>机6</th><th>机7</th><th>机8</th><th>椅1</th><th>椅2</th><th>椅3</th><th>椅4</th><th>椅5</th><th>椅6</th><th>椅7</th><th>椅8</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </div>
         </div>
 
-        <button onclick="optimize()" style="font-size: 18px; padding: 12px 24px; background: #28a745; display: block; margin: 20px auto;">🚀 最適化計算実行</button>
+        <div style="text-align: center; margin: 40px 0;">
+            <button onclick="optimize()">🚀 最適化計算実行</button>
+            <button class="danger" onclick="clearAll()" style="margin-left: 15px;">🔄 全クリア</button>
+        </div>
 
-        <div id="results" class="result" style="display: none;">
-            <!-- 前回と同じ結果表示 -->
-            <h2>📊 最適化結果（3プラン）</h2><div id="plans"></div>
-            <h2>🛒 発注数</h2><div class="scroll-wrap"><table id="orders"></table></div>
-            <h2>📦 倉庫戻し</h2><div class="scroll-wrap"><table id="warehouse"></table></div>
-            <h2>📈 前後比較</h2><div class="scroll-wrap"><table id="comparison"></table></div>
-            <button onclick="downloadCsv()">📥 CSVダウンロード</button>
+        <div id="results" style="display: none;">
+            <div class="color-legend">
+                <div class="legend-item"><div class="legend-color surplus"></div>余剰(緑)</div>
+                <div class="legend-item"><div class="legend-color deficit"></div>不足(赤)</div>
+                <div class="legend-item"><div class="legend-color moved"></div>移動(黄)</div>
+                <div class="legend-item"><div class="legend-color sufficient"></div>充足(青)</div>
+            </div>
+            <div class="results">
+                <div class="result-panel">
+                    <h3>📊 最適化プラン比較</h3>
+                    <div id="plans"></div>
+                </div>
+                <div class="result-panel">
+                    <h3>📈 発注/倉庫戻し</h3>
+                    <div id="orders"></div>
+                </div>
+            </div>
+            <div class="result-panel" style="margin-top: 20px;">
+                <h3>🎯 移動前後比較</h3>
+                <div id="comparison"></div>
+            </div>
+            <div style="text-align: center; margin-top: 30px;">
+                <button onclick="downloadCSV()">💾 全結果CSVダウンロード</button>
+            </div>
         </div>
     </div>
 
     <script>
-        let inventoryData = {}, requiredData = {};
-        const sizes = 8;
+        let inventoryData = {};
+        let requiredData = {};
 
-        // 前回の関数群（getRoomKey, addRow, deleteRow, updateAllData, loadCsv, optimize, runGreedy, display* など）をここに含める
-        // スペース節約のため省略（前回コードからコピー）
+        // テーブルにCtrl+V貼り付け対応
+        document.addEventListener('paste', function(e) {
+            const active = document.activeElement;
+            const tableId = active.closest('table')?.id;
+            if (!tableId || !['inventoryTable', 'requiredTable'].includes(tableId)) return;
 
-        // 🔥 新機能: テーブル直接ペースト（Excel/CSV対応）
-        async function handleTablePaste(e, type) {
             e.preventDefault();
-            e.stopPropagation();
-            const items = await navigator.clipboard.readText();
-            const lines = items.split(/\r?\n/).filter(l => l.trim());
-            const table = document.getElementById(type + 'Table');
-            const tbody = table.tBodies[0];
-
-            // 行数分空行追加
-            for (let i = 0; i < lines.length; i++) {
-                addRow(type);
+            const clipboardData = e.clipboardData || window.clipboardData;
+            const text = clipboardData.getData('text');
+            const lines = text.trim().split('\n').map(line => line.split(/\t|,/).map(cell => cell.trim()));
+            
+            const tbody = active.closest('tbody');
+            const firstCell = active.closest('tr')?.cells[0];
+            if (firstCell) {
+                let rowIndex = Array.from(tbody.children).indexOf(active.closest('tr'));
+                lines.forEach((row, i) => {
+                    if (rowIndex + i >= tbody.children.length) {
+                        addEmptyRow(tableId);
+                    }
+                    const targetRow = tbody.children[rowIndex + i];
+                    row.forEach((cell, j) => {
+                        if (j < targetRow.cells.length) {
+                            targetRow.cells[j].querySelector('input')?.value = cell;
+                        }
+                    });
+                    updateTotals(tableId);
+                });
             }
-
-            // 各行にデータ貼り付け
-            lines.forEach((line, rowIdx) => {
-                const cells = line.split(/\t|,/).map(c => c.trim());
-                const tr = tbody.rows[tbody.rows.length - lines.length + rowIdx];
-                if (tr && cells.length >= 2) {
-                    // 部屋名,階
-                    tr.cells[0].querySelector('input').value = cells[0];
-                    tr.cells[1].querySelector('input').value = cells[1];
-                    // 机1-8
-                    for (let i = 0; i < Math.min(8, cells.length - 2); i++) {
-                        tr.cells[2 + i].querySelector('input').value = parseInt(cells[2 + i]) || 0;
-                    }
-                    // 椅子1-8
-                    for (let i = 0; i < Math.min(8, cells.length - 10); i++) {
-                        tr.cells[10 + i].querySelector('input').value = parseInt(cells[10 + i]) || 0;
-                    }
-                }
-            });
-
-            // ハイライト&データ更新
-            highlightPasteArea(table);
-            updateAllData(type);
-            alert(`${lines.length}行を貼り付けました！`);
-        }
-
-        function highlightPasteArea(table) {
-            Array.from(table.querySelectorAll('input')).forEach(input => {
-                input.classList.add('paste-highlight');
-                setTimeout(() => input.classList.remove('paste-highlight'), 2000);
-            });
-        }
-
-        // テーブルクリックでフォーカス（ペーストしやすく）
-        document.querySelectorAll('.scroll-wrap').forEach(wrap => {
-            wrap.addEventListener('click', e => {
-                if (e.target.tagName !== 'INPUT') wrap.focus();
-            });
         });
 
-        // 残りのスクリプト（前回と同じ）
-        // ...（addRow, updateAllData, optimizeなど）
+        function addRow(type) {
+            const table = document.getElementById(type + 'Table').tBodies[0];
+            const row = table.insertRow();
+            row.innerHTML = `
+                <td class="room-col"><input type="text" placeholder="部屋名" oninput="updateTotals('${type}')"></td>
+                <td class="floor-col"><input type="text" placeholder="階" oninput="updateTotals('${type}')"></td>
+                ${Array(16).fill().map(() => '<td class="desk-col"><input type="number" min="0" value="0" oninput="updateTotals(\''+type+'\')"></td>').join('')}
+            `;
+            updateTotals(type);
+        }
+
+        function addEmptyRow(tableId) {
+            const table = document.getElementById(tableId).tBodies[0];
+            const row = table.insertRow();
+            row.innerHTML = `
+                <td class="room-col"><input type="text" placeholder="部屋名" oninput="updateTotals('${tableId.replace('Table', '')}')"></td>
+                <td class="floor-col"><input type="text" placeholder="階" oninput="updateTotals('${tableId.replace('Table', '')}')"></td>
+                ${Array(16).fill().map(() => '<td><input type="number" min="0" value="0" oninput="updateTotals(\''+tableId.replace('Table', '')+'\')"></td>').join('')}
+            `;
+        }
+
+        function updateTotals(type) {
+            const data = {};
+            const table = document.getElementById(type + 'Table').tBodies[0];
+            for (let row of table.rows) {
+                const room = row.cells[0].querySelector('input').value.trim();
+                const floor = row.cells[1].querySelector('input').value.trim();
+                if (!room || !floor) continue;
+                
+                const key = `${room}|${floor}`;
+                if (!data[key]) {
+                    data[key] = { room, floor: parseInt(floor), desks: [0,0,0,0,0,0,0,0], chairs: [0,0,0,0,0,0,0,0] };
+                }
+                
+                for (let i = 0; i < 8; i++) {
+                    data[key].desks[i] += parseInt(row.cells[2+i].querySelector('input').value) || 0;
+                    data[key].chairs[i] += parseInt(row.cells[10+i].querySelector('input').value) || 0;
+                }
+            }
+            if (type === 'inventory') inventoryData = data;
+            else requiredData = data;
+        }
+
+        function loadCSV(type) {
+            const csvText = document.getElementById(type + 'CSV').value;
+            Papa.parse(csvText, {
+                header: false,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const table = document.getElementById(type + 'Table');
+                    table.tBodies[0].innerHTML = '';
+                    results.data.forEach(row => {
+                        if (row.length < 18) return;
+                        addEmptyRow(type + 'Table');
+                        const lastRow = table.tBodies[0].lastElementChild;
+                        lastRow.cells[0].querySelector('input').value = row[0];
+                        lastRow.cells[1].querySelector('input').value = row[1];
+                        for (let i = 0; i < 8; i++) {
+                            lastRow.cells[2+i].querySelector('input').value = row[2+i];
+                            lastRow.cells[10+i].querySelector('input').value = row[10+i];
+                        }
+                    });
+                    updateTotals(type);
+                }
+            });
+        }
+
+        function clearAll() {
+            inventoryData = {}; requiredData = {};
+            document.getElementById('inventoryTable').tBodies[0].innerHTML = '';
+            document.getElementById('requiredTable').tBodies[0].innerHTML = '';
+            document.getElementById('inventoryCSV').value = '';
+            document.getElementById('requiredCSV').value = '';
+            document.getElementById('results').style.display = 'none';
+        }
+
+        function optimize() {
+            updateTotals('inventory');
+            updateTotals('required');
+            
+            if (Object.keys(inventoryData).length === 0 || Object.keys(requiredData).length === 0) {
+                alert('在庫と必要数の両方を入力してください');
+                return;
+            }
+
+            const plans = calculateOptimizations(inventoryData, requiredData);
+            displayResults(plans);
+        }
+
+        function calculateOptimizations(inventory, required) {
+            const rooms = [...new Set([...Object.keys(inventory), ...Object.keys(required)])];
+            const plans = {};
+
+            // アルゴリズム1: 距離優先
+            plans.distance = greedyOptimize(inventory, required, (from, to) => {
+                const fDiff = Math.abs(from.floor - to.floor);
+                const sDiff = Math.abs((from.desks.reduce((a,b)=>a+b,0)+from.chairs.reduce((a,b)=>a+b)) - (to.desks.reduce((a,b)=>a+b,0)+to.chairs.reduce((a,b)=>a+b)));
+                return fDiff * 10 + sDiff;
+            });
+
+            // アルゴリズム2: 最小台数数
+            plans.minCount = greedyOptimize(inventory, required, () => Math.random());
+
+            // アルゴリズム3: 最小階移動
+            plans.minFloor = greedyOptimize(inventory, required, (from, to) => 
+                from.floor === to.floor ? 0 : 100
+            );
+
+            return plans;
+        }
+
+        function greedyOptimize(inventory, required, costFn) {
+            const result = { moves: [], orders: {}, returns: {} };
+            const avail = JSON.parse(JSON.stringify(inventory));
+            const need = JSON.parse(JSON.stringify(required));
+
+            for (let toRoom in need) {
+                result.orders[toRoom] = { desks: need[toRoom].desks.map((_,i) => Math.max(0, need[toRoom].desks[i] - (avail[toRoom]?.desks[i] || 0))), 
+                                        chairs: need[toRoom].chairs.map((_,i) => Math.max(0, need[toRoom].chairs[i] - (avail[toRoom]?.chairs[i] || 0))) };
+
+                for (let fromRoom in avail) {
+                    if (fromRoom === toRoom) continue;
+                    for (let i = 0; i < 8; i++) {
+                        const move = Math.min(avail[fromRoom].desks[i] - (need[fromRoom]?.desks[i] || 0), 
+                                            need[toRoom].desks[i] - (avail[toRoom]?.desks[i] || 0));
+                        if (move > 0) {
+                            result.moves.push({ from: fromRoom, to: toRoom, type: '机'+(i+1)+'号', count: move });
+                            avail[fromRoom].desks[i] -= move;
+                            avail[toRoom].desks[i] += move;
+                        }
+                    }
+                    for (let i = 0; i < 8; i++) {
+                        const move = Math.min(avail[fromRoom].chairs[i] - (need[fromRoom]?.chairs[i] || 0), 
+                                            need[toRoom].chairs[i] - (avail[toRoom]?.chairs[i] || 0));
+                        if (move > 0) {
+                            result.moves.push({ from: fromRoom, to: toRoom, type: '椅'+(i+1)+'号', count: move });
+                            avail[fromRoom].chairs[i] -= move;
+                            avail[toRoom].chairs[i] += move;
+                        }
+                    }
+                }
+            }
+
+            // 倉庫戻し計算
+            for (let room in avail) {
+                const surplusDesks = avail[room].desks.map((d,i) => Math.max(0, d - (need[room]?.desks[i] || 0)));
+                const surplusChairs = avail[room].chairs.map((c,i) => Math.max(0, c - (need[room]?.chairs[i] || 0)));
+                if (surplusDesks.some(d => d > 0) || surplusChairs.some(c => c > 0)) {
+                    result.returns[room] = { desks: surplusDesks, chairs: surplusChairs };
+                }
+            }
+
+            return result;
+        }
+
+        function displayResults(plans) {
+            let html = '';
+
+            // 最適化プラン
+            html += '<div style="margin-bottom: 20px;">';
+            Object.entries(plans).forEach(([name, plan]) => {
+                html += `<h4>${name === 'distance' ? '距離優先' : name === 'minCount' ? '最小台数数' : '最小階移動'}</h4>`;
+                html += `<div style="font-size: 13px;">${plan.moves.slice(0,10).map(m => `${m.from}→${m.to}: ${m.type}×${m.count}`).join('<br>')}${plan.moves.length > 10 ? `<br>... ほか${plan.moves.length-10}件` : ''}</div>`;
+            });
+            html += '</div>';
+
+            // 発注/倉庫戻し
+            html += '<table style="font-size: 11px;"><thead><tr><th>部屋</th><th>発注(机)</th><th>発注(椅)</th><th>倉庫戻し(机)</th><th>倉庫戻し(椅)</th></tr></thead><tbody>';
+            Object.entries(plans.distance.orders).forEach(([room, order]) => {
+                const returns = plans.distance.returns[room] || { desks: [0,0,0,0,0,0,0,0], chairs: [0,0,0,0,0,0,0,0] };
+                html += `<tr><td>${room}</td><td>${order.desks.join(',')}</td><td>${order.chairs.join(',')}</td><td>${returns.desks.join(',')}</td><td>${returns.chairs.join(',')}</td></tr>`;
+            });
+            html += '</tbody></table>';
+
+            document.getElementById('plans').innerHTML = html;
+
+            // 比較表
+            displayComparison(plans.distance);
+
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('orders').innerHTML = html;
+        }
+
+        function displayComparison(plan) {
+            const html = '<table><thead><tr><th>部屋</th>' +
+                Array.from({length: 8}, (_,i) => `<th>机${i+1}</th>`).join('') +
+                Array.from({length: 8}, (_,i) => `<th>椅${i+1}</th>`).join('') +
+                '<th>状態</th></tr></thead><tbody>';
+            
+            Object.keys(inventoryData).forEach(room => {
+                const inv = inventoryData[room];
+                const req = requiredData[room] || { desks: [0,0,0,0,0,0,0,0], chairs: [0,0,0,0,0,0,0,0] };
+                const status = [];
+                
+                for (let i = 0; i < 8; i++) {
+                    const deskDiff = inv.desks[i] - req.desks[i];
+                    status.push(deskDiff > 0 ? 'surplus' : deskDiff < 0 ? 'deficit' : 'sufficient');
+                }
+                for (let i = 0; i < 8; i++) {
+                    const chairDiff = inv.chairs[i] - req.chairs[i];
+                    status.push(chairDiff > 0 ? 'surplus' : chairDiff < 0 ? 'deficit' : 'sufficient');
+                }
+                
+                html += `<tr><td>${room}</td>`;
+                [...inv.desks, ...inv.chairs].forEach((v, i) => {
+                    html += `<td class="${status[i]}">${v}</td>`;
+                });
+                html += `<td>${status.map(s => s.slice(0,4)).join('/')}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('comparison').innerHTML = html;
+        }
+
+        function downloadCSV() {
+            const csv = generateCSV();
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = '教室家具最適化結果.csv';
+            link.click();
+        }
+
+        function generateCSV() {
+            return '部屋,階,机1-8,椅1-8,発注,倉庫戻し\n' +
+                Object.entries(inventoryData).map(([k,v]) => 
+                    `${v.room},${v.floor},"${v.desks.join(',')}","${v.chairs.join(',')}",...,...`
+                ).join('\n');
+        }
+
+        // 初期行追加
+        addRow('inventory');
+        addRow('required');
     </script>
 </body>
 </html>
